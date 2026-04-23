@@ -30,6 +30,7 @@ $results = $stmt->fetchAll();
                     <th>Score (%)</th>
                     <th>Start</th>
                     <th>End</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -42,6 +43,11 @@ $results = $stmt->fetchAll();
                         <td><?= number_format($row['score'], 2) ?></td>
                         <td><?= htmlspecialchars($row['start_time']) ?></td>
                         <td><?= htmlspecialchars($row['end_time'] ?? '-') ?></td>
+                        <td>
+                            <a href="result_details.php?id=<?= $row['id'] ?>">
+                                <button type="button">View</button>
+                            </a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
