@@ -38,11 +38,11 @@ $now = time();
 
 $questionsStmt = $pdo->prepare("
     SELECT q.id
-    FROM exam_questions eq
-    INNER JOIN questions q ON eq.question_id = q.id
-    WHERE eq.exam_id = :exam_id
+    FROM attempt_questions aq
+    INNER JOIN questions q ON aq.question_id = q.id
+    WHERE aq.attempt_id = :attempt_id
 ");
-$questionsStmt->execute(['exam_id' => $attempt['exam_id']]);
+$questionsStmt->execute(['attempt_id' => $attemptId]);
 $questions = $questionsStmt->fetchAll();
 
 $totalQuestions = count($questions);

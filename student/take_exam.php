@@ -30,25 +30,37 @@ if ($attempt['end_time'] !== null) {
 
 $questionsStmt = $pdo->prepare("
     SELECT q.id AS question_id, q.question_text, q.image_path
-    FROM exam_questions eq
-    INNER JOIN questions q ON eq.question_id = q.id
-    WHERE eq.exam_id = :exam_id
-    ORDER BY eq.id ASC
+    FROM attempt_questions aq
+    INNER JOIN questions q ON aq.question_id = q.id
+    WHERE aq.attempt_id = :attempt_id
+    ORDER BY aq.id ASC
 ");
-$questionsStmt->execute(['exam_id' => $attempt['exam_id']]);
+$questionsStmt->execute(['attempt_id' => $attemptId]);
 $questions = $questionsStmt->fetchAll();
 
 $optionsStmt = $pdo->prepare("
     SELECT id, option_text, question_id
     FROM question_options
     WHERE question_id = :question_id
-    ORDER BY id ASC
+    ORDER BY RAND()
 ");
 
 $startTimestamp = strtotime($attempt['start_time']);
 $durationSeconds = ((int)$attempt['duration_minutes']) * 60;
 $endTimestamp = $startTimestamp + $durationSeconds;
 $remainingSeconds = max(0, $endTimestamp - time());
+if ($remainingSeconds <= 0) {
+    ?>
+    <form id="autoExpiredForm" method="POST" action="submit_exam.php">
+        <input type="hidden" name="attempt_id" value="<?= $attemptId ?>">
+        <input type="hidden" name="auto_submitted" value="1">
+    </form>
+    <script>
+        document.getElementById('autoExpiredForm').submit();
+    </script>
+    <?php
+    exit;
+}
 ?>
 
 <?php include __DIR__ . '/../includes/header.php'; ?>
@@ -57,7 +69,6 @@ $remainingSeconds = max(0, $endTimestamp - time());
 <div class="container page">
     <div class="exam-header">
         <h1><?= htmlspecialchars($attempt['title']) ?></h1>
-        <p>DEBUG remainingSeconds: <?= $remainingSeconds ?></p>
         <div id="timer" class="timer-box" data-remaining-seconds="<?= $remainingSeconds ?>">
             Loading timer...
         </div>
@@ -70,6 +81,7 @@ $remainingSeconds = max(0, $endTimestamp - time());
             <div class="card question-card">
                 <h3>Question <?= $index + 1 ?></h3>
                 <p><?= htmlspecialchars($question['question_text']) ?></p>
+                <input type="hidden" name="auto_submitted" id="auto_submitted" value="0">
 
                 <?php if (!empty($question['image_path'])): ?>
                     <img src="/music-exam-system-main/<?= htmlspecialchars($question['image_path']) ?>" class="question-image" alt="Question image">

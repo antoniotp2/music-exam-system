@@ -26,10 +26,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['title'] ?? '');
     $duration = (int)($_POST['duration_minutes'] ?? 0);
     $isVisible = (int)($_POST['is_visible'] ?? 0);
+    $availableFrom = !empty($_POST['available_from']) ? $_POST['available_from'] : null;
+    $availableUntil = !empty($_POST['available_until']) ? $_POST['available_until'] : null;
+    $randomQuestionCount = (int)($_POST['random_question_count'] ?? 0);
     $questionIds = $_POST['question_ids'] ?? [];
-
-    if ($title === '' || $duration <= 0 || empty($questionIds)) {
-        setFlash('error', 'Title, duration and at least one question are required.');
+    if (
+    $title === '' ||
+    $duration <= 0 ||
+    empty($questionIds) ||
+    $randomQuestionCount <= 0 ||
+    $randomQuestionCount > count($questionIds)
+) {
+        setFlash('error', 'Title, duration, questions and valid random question count are required.');
         header("Location: edit_exam.php?id=" . $examId);
         exit;
     }
@@ -37,22 +45,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo->beginTransaction();
 
-        /* update basic exam data */
         $stmt = $pdo->prepare("
             UPDATE exams
             SET title = :title,
                 duration_minutes = :duration,
-                is_visible = :is_visible
+                is_visible = :is_visible,
+                available_from = :available_from,
+                available_until = :available_until,
+                random_question_count = :random_question_count
             WHERE id = :id
         ");
         $stmt->execute([
             'title' => $title,
             'duration' => $duration,
             'is_visible' => $isVisible,
+            'available_from' => $availableFrom,
+            'available_until' => $availableUntil,
+            'random_question_count' => $randomQuestionCount,
             'id' => $examId
         ]);
 
-        /* replace exam questions */
         $stmt = $pdo->prepare("DELETE FROM exam_questions WHERE exam_id = :exam_id");
         $stmt->execute(['exam_id' => $examId]);
 
@@ -123,11 +135,40 @@ $selectedQuestionIds = $stmt->fetchAll(PDO::FETCH_COLUMN);
             </div>
 
             <div class="form-group">
+    <label>Random Questions Count</label>
+    <input
+        type="number"
+        name="random_question_count"
+        min="1"
+        value="<?= htmlspecialchars($exam['random_question_count'] ?? '') ?>"
+        required
+    >
+</div>
+
+            <div class="form-group">
                 <label>Visibility</label>
                 <select name="is_visible" required>
                     <option value="1" <?= $exam['is_visible'] ? 'selected' : '' ?>>Visible to students</option>
                     <option value="0" <?= !$exam['is_visible'] ? 'selected' : '' ?>>Hidden from students</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label>Available From</label>
+                <input
+                    type="datetime-local"
+                    name="available_from"
+                    value="<?= !empty($exam['available_from']) ? date('Y-m-d\TH:i', strtotime($exam['available_from'])) : '' ?>"
+                >
+            </div>
+
+            <div class="form-group">
+                <label>Available Until</label>
+                <input
+                    type="datetime-local"
+                    name="available_until"
+                    value="<?= !empty($exam['available_until']) ? date('Y-m-d\TH:i', strtotime($exam['available_until'])) : '' ?>"
+                >
             </div>
 
             <div class="form-group">

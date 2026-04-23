@@ -4,10 +4,15 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/flash.php';
 requireStudent();
 
-$stmt = $pdo->query("SELECT * FROM exams WHERE is_visible = 1 ORDER BY id DESC");
-$stmt ->execute();
+$stmt = $pdo->query("
+    SELECT *
+    FROM exams
+    WHERE is_visible = 1
+      AND (available_from IS NULL OR available_from <= NOW())
+      AND (available_until IS NULL OR available_until >= NOW())
+    ORDER BY id DESC
+");
 $exams = $stmt->fetchAll();
-
 
 
 ?>

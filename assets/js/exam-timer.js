@@ -1,44 +1,28 @@
-document.addEventListener("DOMContentLoaded", function () {
-    const timerElement = document.getElementById("timer");
-    const examForm = document.getElementById("examForm");
+document.addEventListener('DOMContentLoaded', function () {
+    const timerElement = document.getElementById('timer');
+    const form = document.getElementById('examForm');
+    const autoSubmittedInput = document.getElementById('auto_submitted');
 
-    if (!timerElement || !examForm) return;
+    if (!timerElement || !form) return;
 
-    let remaining = Number(timerElement.dataset.remainingSeconds);
-    let hasSubmitted = false;
-
-    if (!Number.isFinite(remaining) || remaining < 0) {
-        remaining = 0;
-    }
-
-    function autoSubmitExam() {
-        if (hasSubmitted) return;
-        hasSubmitted = true;
-
-        timerElement.textContent = "Time is up! Submitting...";
-        
-        const hiddenInput = document.createElement("input");
-        hiddenInput.type = "hidden";
-        hiddenInput.name = "auto_submitted";
-        hiddenInput.value = "1";
-        examForm.appendChild(hiddenInput);
-
-        examForm.submit();
-    }
+    let remainingSeconds = parseInt(timerElement.dataset.remainingSeconds, 10) || 0;
 
     function updateTimer() {
-        if (remaining <= 0) {
-            autoSubmitExam();
+        const minutes = Math.floor(remainingSeconds / 60);
+        const seconds = remainingSeconds % 60;
+
+        timerElement.textContent =
+            String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+
+        if (remainingSeconds <= 0) {
+            if (autoSubmittedInput) {
+                autoSubmittedInput.value = '1';
+            }
+            form.submit();
             return;
         }
 
-        const minutes = Math.floor(remaining / 60);
-        const seconds = remaining % 60;
-
-        timerElement.textContent =
-            `Time Left: ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-
-        remaining--;
+        remainingSeconds--;
     }
 
     updateTimer();
