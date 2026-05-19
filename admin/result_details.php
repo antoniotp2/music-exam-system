@@ -34,19 +34,34 @@ if (!$attempt) {
 /* LOAD ANSWERS */
 $stmt = $pdo->prepare("
     SELECT 
+        ans.id AS answer_id,
+        q.id AS question_id,
         q.question_text,
-        sel.option_text AS selected_answer,
-        corr.option_text AS correct_answer,
+        q.answer_type,
         ans.is_correct
     FROM answers ans
     INNER JOIN questions q ON ans.question_id = q.id
-    LEFT JOIN question_options sel ON ans.selected_option_id = sel.id
-    LEFT JOIN question_options corr 
-        ON corr.question_id = q.id AND corr.is_correct = 1
     WHERE ans.attempt_id = ?
+    ORDER BY ans.id ASC
 ");
 $stmt->execute([$attemptId]);
 $answers = $stmt->fetchAll();
+
+/* PREPARE OPTION QUERIES */
+$studentOptionsStmt = $pdo->prepare("
+    SELECT qo.option_text
+    FROM answer_selected_options aso
+    INNER JOIN question_options qo ON aso.option_id = qo.id
+    WHERE aso.answer_id = ?
+    ORDER BY qo.id ASC
+");
+
+$correctOptionsStmt = $pdo->prepare("
+    SELECT option_text
+    FROM question_options
+    WHERE question_id = ? AND is_correct = 1
+    ORDER BY id ASC
+");
 
 /* COUNT CORRECT / WRONG */
 $totalQuestions = count($answers);
@@ -76,8 +91,8 @@ $wrongCount = $totalQuestions - $correctCount;
         <p><strong>Score:</strong> <?= number_format($attempt['score'], 2) ?>%</p>
         <p><strong>Start Time:</strong> <?= htmlspecialchars($attempt['start_time']) ?></p>
         <p><strong>End Time:</strong> <?= htmlspecialchars($attempt['end_time'] ?? '-') ?></p>
-        <p><strong>Correct Answers:</strong> <?= $correctCount ?></p>
-        <p><strong>Wrong Answers:</strong> <?= $wrongCount ?></p>
+        <p><strong>Fully Correct Answers:</strong> <?= $correctCount ?></p>
+        <p><strong>Wrong / Partial Answers:</strong> <?= $wrongCount ?></p>
         <p><strong>Total Questions:</strong> <?= $totalQuestions ?></p>
     </div>
 
@@ -88,21 +103,45 @@ $wrongCount = $totalQuestions - $correctCount;
             <p>No answers found for this attempt.</p>
         <?php else: ?>
             <?php foreach ($answers as $index => $a): ?>
+                <?php
+                $studentOptionsStmt->execute([$a['answer_id']]);
+                $studentAnswers = $studentOptionsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                $correctOptionsStmt->execute([$a['question_id']]);
+                $correctAnswers = $correctOptionsStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                $studentAnswerText = !empty($studentAnswers)
+                    ? implode(', ', $studentAnswers)
+                    : 'No answer';
+
+                $correctAnswerText = !empty($correctAnswers)
+                    ? implode(', ', $correctAnswers)
+                    : '-';
+                ?>
+
                 <div style="border: 1px solid #ccc; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                    <p><strong>Question <?= $index + 1 ?>:</strong> <?= htmlspecialchars($a['question_text']) ?></p>
+                    <p>
+                        <strong>Question <?= $index + 1 ?>:</strong>
+                        <?= htmlspecialchars($a['question_text']) ?>
+                    </p>
+
+                    <p>
+                        <strong>Type:</strong>
+                        <?= htmlspecialchars($a['answer_type']) ?>
+                    </p>
 
                     <p>
                         <strong>Student Answer:</strong>
-                        <?= htmlspecialchars($a['selected_answer'] ?? 'No answer') ?>
+                        <?= htmlspecialchars($studentAnswerText) ?>
                     </p>
 
                     <p>
                         <strong>Correct Answer:</strong>
-                        <?= htmlspecialchars($a['correct_answer'] ?? '-') ?>
+                        <?= htmlspecialchars($correctAnswerText) ?>
                     </p>
 
                     <p style="font-weight: bold; color: <?= $a['is_correct'] ? 'green' : 'red' ?>;">
-                        <?= $a['is_correct'] ? '✔ Correct' : '✘ Wrong' ?>
+                        <?= $a['is_correct'] ? '✔ Fully Correct' : '✘ Wrong / Partial' ?>
                     </p>
                 </div>
             <?php endforeach; ?>

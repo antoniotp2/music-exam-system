@@ -9,11 +9,46 @@ $categories = $pdo->query("SELECT * FROM categories ORDER BY name ASC")->fetchAl
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $questionText = trim($_POST['question_text'] ?? '');
     $categoryId = !empty($_POST['category_id']) ? (int)$_POST['category_id'] : null;
-    $options = $_POST['options'] ?? [];
-    $correctIndex = $_POST['correct_answer'] ?? '';
+    $answerType = $_POST['answer_type'] ?? 'single';
+    $optionsRaw = $_POST['options'] ?? [];
+    $correctIndexes = $_POST['correct_answers'] ?? [];
 
-    if ($questionText === '' || count($options) !== 4 || $correctIndex === '') {
-        setFlash('error', 'All question fields are required.');
+    if (!in_array($answerType, ['single', 'multiple'])) {
+        $answerType = 'single';
+    }
+
+    $options = [];
+    $oldToNewIndex = [];
+
+    foreach ($optionsRaw as $oldIndex => $optionText) {
+        $optionText = trim($optionText);
+
+        if ($optionText !== '') {
+            $oldToNewIndex[(int)$oldIndex] = count($options);
+            $options[] = $optionText;
+        }
+    }
+
+    $correctIndexes = array_map('intval', $correctIndexes);
+
+    $cleanCorrectIndexes = [];
+
+    foreach ($correctIndexes as $oldIndex) {
+        if (isset($oldToNewIndex[$oldIndex])) {
+            $cleanCorrectIndexes[] = $oldToNewIndex[$oldIndex];
+        }
+    }
+
+    $cleanCorrectIndexes = array_unique($cleanCorrectIndexes);
+
+    if ($questionText === '' || count($options) < 2 || empty($cleanCorrectIndexes)) {
+        setFlash('error', 'Question must have at least 2 options and at least one correct answer.');
+        header("Location: add_question.php");
+        exit;
+    }
+
+    if ($answerType === 'single' && count($cleanCorrectIndexes) !== 1) {
+        setFlash('error', 'Single answer questions must have exactly one correct answer.');
         header("Location: add_question.php");
         exit;
     }
@@ -22,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!empty($_FILES['question_image']['name'])) {
         $uploadDir = __DIR__ . '/../uploads/questions/';
+
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0777, true);
         }
@@ -42,13 +78,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->beginTransaction();
 
         $stmt = $pdo->prepare("
-            INSERT INTO questions (question_text, image_path, category_id)
-            VALUES (:question_text, :image_path, :category_id)
+            INSERT INTO questions (question_text, image_path, category_id, answer_type)
+            VALUES (:question_text, :image_path, :category_id, :answer_type)
         ");
+
         $stmt->execute([
             'question_text' => $questionText,
             'image_path' => $imagePath,
-            'category_id' => $categoryId
+            'category_id' => $categoryId,
+            'answer_type' => $answerType
         ]);
 
         $questionId = $pdo->lastInsertId();
@@ -61,16 +99,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($options as $index => $optionText) {
             $optionStmt->execute([
                 'question_id' => $questionId,
-                'option_text' => trim($optionText),
-                'is_correct' => ((string)$index === (string)$correctIndex) ? 1 : 0
+                'option_text' => $optionText,
+                'is_correct' => in_array($index, $cleanCorrectIndexes) ? 1 : 0
             ]);
         }
 
         $pdo->commit();
         setFlash('success', 'Question added successfully.');
     } catch (Exception $e) {
-        $pdo->rollBack();
-        setFlash('error', 'Failed to add question.');
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        setFlash('error', 'Failed to add question: ' . $e->getMessage());
     }
 
     header("Location: add_question.php");
@@ -105,44 +146,148 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <div class="form-group">
+                <label>Answer Type</label>
+                <select name="answer_type" required>
+                    <option value="single">Single correct answer</option>
+                    <option value="multiple">Multiple correct answers</option>
+                </select>
+            </div>
+
+            <div class="form-group">
                 <label>Optional Question Image</label>
                 <input type="file" name="question_image" accept="image/*">
             </div>
 
-            <div class="form-group">
-                <label>Option 1</label>
-                <input type="text" name="options[]" required>
+            <h3>Options</h3>
+            <p>
+                Add at least 2 options. For single answer type, select exactly one correct answer.
+            </p>
+
+            <div id="optionsContainer">
+                <div class="form-group option-row">
+                    <label>Option 1</label>
+                    <input type="text" name="options[0]" required>
+                    <label>
+                        <input type="checkbox" name="correct_answers[]" value="0">
+                        Correct
+                    </label>
+                    <button type="button" class="remove-option-btn" style="display:none;">Remove</button>
+                </div>
+
+                <div class="form-group option-row">
+                    <label>Option 2</label>
+                    <input type="text" name="options[1]" required>
+                    <label>
+                        <input type="checkbox" name="correct_answers[]" value="1">
+                        Correct
+                    </label>
+                    <button type="button" class="remove-option-btn" style="display:none;">Remove</button>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Option 2</label>
-                <input type="text" name="options[]" required>
-            </div>
+            <button type="button" id="addOptionBtn" class="btn btn-secondary">Add Option</button>
 
-            <div class="form-group">
-                <label>Option 3</label>
-                <input type="text" name="options[]" required>
-            </div>
-
-            <div class="form-group">
-                <label>Option 4</label>
-                <input type="text" name="options[]" required>
-            </div>
-
-            <div class="form-group">
-                <label>Correct Answer</label>
-                <select name="correct_answer" required>
-                    <option value="">Select correct option</option>
-                    <option value="0">Option 1</option>
-                    <option value="1">Option 2</option>
-                    <option value="2">Option 3</option>
-                    <option value="3">Option 4</option>
-                </select>
-            </div>
+            <br><br>
 
             <button type="submit" class="btn btn-primary">Save Question</button>
         </form>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const answerType = document.querySelector('select[name="answer_type"]');
+    const optionsContainer = document.getElementById('optionsContainer');
+    const addOptionBtn = document.getElementById('addOptionBtn');
+
+    let optionIndex = 2;
+
+    function getCorrectBoxes() {
+        return document.querySelectorAll('input[name="correct_answers[]"]');
+    }
+
+    function enforceSingleSelection(changedBox) {
+        if (answerType.value === 'single' && changedBox.checked) {
+            getCorrectBoxes().forEach(box => {
+                if (box !== changedBox) {
+                    box.checked = false;
+                }
+            });
+        }
+    }
+
+    function updateRemoveButtons() {
+        const rows = optionsContainer.querySelectorAll('.option-row');
+        rows.forEach(row => {
+            const btn = row.querySelector('.remove-option-btn');
+            btn.style.display = rows.length > 2 ? 'inline-block' : 'none';
+        });
+    }
+
+    function refreshLabels() {
+        const rows = optionsContainer.querySelectorAll('.option-row');
+        rows.forEach((row, index) => {
+            row.querySelector('label').textContent = 'Option ' + (index + 1);
+        });
+    }
+
+    function bindRow(row) {
+        const checkbox = row.querySelector('input[type="checkbox"]');
+        const removeBtn = row.querySelector('.remove-option-btn');
+
+        checkbox.addEventListener('change', function () {
+            enforceSingleSelection(this);
+        });
+
+        removeBtn.addEventListener('click', function () {
+            row.remove();
+            refreshLabels();
+            updateRemoveButtons();
+        });
+    }
+
+    optionsContainer.querySelectorAll('.option-row').forEach(bindRow);
+
+    addOptionBtn.addEventListener('click', function () {
+        const row = document.createElement('div');
+        row.className = 'form-group option-row';
+
+        row.innerHTML = `
+            <label>Option</label>
+            <input type="text" name="options[${optionIndex}]" required>
+            <label>
+                <input type="checkbox" name="correct_answers[]" value="${optionIndex}">
+                Correct
+            </label>
+            <button type="button" class="remove-option-btn">Remove</button>
+        `;
+
+        optionsContainer.appendChild(row);
+        optionIndex++;
+
+        bindRow(row);
+        refreshLabels();
+        updateRemoveButtons();
+    });
+
+    answerType.addEventListener('change', function () {
+        if (answerType.value === 'single') {
+            let foundOne = false;
+
+            getCorrectBoxes().forEach(box => {
+                if (box.checked) {
+                    if (!foundOne) {
+                        foundOne = true;
+                    } else {
+                        box.checked = false;
+                    }
+                }
+            });
+        }
+    });
+
+    updateRemoveButtons();
+});
+</script>
 
 <?php include __DIR__ . '/../includes/footer.php'; ?>

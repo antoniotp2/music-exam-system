@@ -77,30 +77,42 @@ $insertStmt->execute([
 ]);
 
 $attemptId = $pdo->lastInsertId();
-/* RANDOM QUESTIONS FOR THIS ATTEMPT */
 
-// πόσες θέλουμε
-$questionLimit = (int)$exam['random_question_count'];
+/* QUESTIONS FOR THIS ATTEMPT */
 
-// πάρε τυχαίες από τις επιλεγμένες του exam
-$questionsStmt = $pdo->prepare("
-    SELECT question_id
-    FROM exam_questions
-    WHERE exam_id = :exam_id
-    ORDER BY RAND()
-    LIMIT $questionLimit
-");
-$questionsStmt->execute(['exam_id' => $examId]);
+$questionLimit = $exam['random_question_count'];
 
-$randomQuestions = $questionsStmt->fetchAll(PDO::FETCH_COLUMN);
+if ($questionLimit !== null && (int)$questionLimit > 0) {
+    // Αν έχει οριστεί random count, πάρε τόσες τυχαίες
+    $questionsStmt = $pdo->prepare("
+        SELECT question_id
+        FROM exam_questions
+        WHERE exam_id = :exam_id
+        ORDER BY RAND()
+        LIMIT " . (int)$questionLimit
+    );
+} else {
+    // Αν δεν έχει οριστεί random count, πάρε όλες τις ερωτήσεις
+    $questionsStmt = $pdo->prepare("
+        SELECT question_id
+        FROM exam_questions
+        WHERE exam_id = :exam_id
+        ORDER BY id ASC
+    ");
+}
 
-// αποθήκευση για τον συγκεκριμένο student
+$questionsStmt->execute([
+    'exam_id' => $examId
+]);
+
+$selectedQuestions = $questionsStmt->fetchAll(PDO::FETCH_COLUMN);
+
 $insertAttemptQuestion = $pdo->prepare("
     INSERT INTO attempt_questions (attempt_id, question_id)
     VALUES (:attempt_id, :question_id)
 ");
 
-foreach ($randomQuestions as $questionId) {
+foreach ($selectedQuestions as $questionId) {
     $insertAttemptQuestion->execute([
         'attempt_id' => $attemptId,
         'question_id' => $questionId

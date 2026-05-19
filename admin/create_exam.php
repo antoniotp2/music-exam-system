@@ -12,8 +12,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $isVisible = (int)($_POST['is_visible'] ?? 1);
     $questionIds = $_POST['question_ids'] ?? [];
 
+    $availableFrom = !empty($_POST['available_from']) ? $_POST['available_from'] : null;
+    $availableUntil = !empty($_POST['available_until']) ? $_POST['available_until'] : null;
+
+    $randomQuestionCount = ($_POST['random_question_count'] !== '')
+        ? (int)$_POST['random_question_count']
+        : null;
+
     if ($title === '' || $duration <= 0 || empty($questionIds)) {
         setFlash('error', 'All exam fields are required.');
+        header("Location: create_exam.php");
+        exit;
+    }
+
+    if ($randomQuestionCount !== null && ($randomQuestionCount <= 0 || $randomQuestionCount > count($questionIds))) {
+        setFlash('error', 'Random Questions Count must be between 1 and the number of selected questions.');
         header("Location: create_exam.php");
         exit;
     }
@@ -22,17 +35,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->beginTransaction();
 
         $stmt = $pdo->prepare("
-    INSERT INTO exams (title, duration_minutes, is_visible)
-    VALUES (:title, :duration, :is_visible)
-");
-$stmt->execute([
-    'title' => $title,
-    'duration' => $duration,
-    'is_visible' => $isVisible
-]);
+            INSERT INTO exams (
+                title,
+                duration_minutes,
+                is_visible,
+                available_from,
+                available_until,
+                random_question_count
+            )
+            VALUES (
+                :title,
+                :duration,
+                :is_visible,
+                :available_from,
+                :available_until,
+                :random_question_count
+            )
+        ");
+
+        $stmt->execute([
+            'title' => $title,
+            'duration' => $duration,
+            'is_visible' => $isVisible,
+            'available_from' => $availableFrom,
+            'available_until' => $availableUntil,
+            'random_question_count' => $randomQuestionCount
+        ]);
+
         $examId = $pdo->lastInsertId();
 
-        $linkStmt = $pdo->prepare("INSERT INTO exam_questions (exam_id, question_id) VALUES (:exam_id, :question_id)");
+        $linkStmt = $pdo->prepare("
+            INSERT INTO exam_questions (exam_id, question_id)
+            VALUES (:exam_id, :question_id)
+        ");
+
         foreach ($questionIds as $qid) {
             $linkStmt->execute([
                 'exam_id' => $examId,
@@ -43,7 +79,10 @@ $stmt->execute([
         $pdo->commit();
         setFlash('success', 'Exam created successfully.');
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
         setFlash('error', 'Failed to create exam.');
     }
 
@@ -67,20 +106,42 @@ $stmt->execute([
             </div>
 
             <div class="form-group">
-    <label>Duration (minutes)</label>
-    <input type="number" name="duration_minutes" min="1" required>
-</div>
+                <label>Duration (minutes)</label>
+                <input type="number" name="duration_minutes" min="1" required>
+            </div>
 
-<div class="form-group">
-    <label>Visibility</label>
-    <select name="is_visible" required>
-        <option value="1">Visible to students</option>
-        <option value="0">Hidden from students</option>
-    </select>
-</div>
+            <div class="form-group">
+                <label>Random Questions Count</label>
+                <input
+                    type="number"
+                    name="random_question_count"
+                    min="1"
+                    placeholder="Leave empty to use all selected questions"
+                >
+                <small>If empty, all selected questions will appear.</small>
+            </div>
 
-<div class="form-group">
-    <label>Assign Questions</label>
+            <div class="form-group">
+                <label>Visibility</label>
+                <select name="is_visible" required>
+                    <option value="1">Visible to students</option>
+                    <option value="0">Hidden from students</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Available From</label>
+                <input type="datetime-local" name="available_from">
+            </div>
+
+            <div class="form-group">
+                <label>Available Until</label>
+                <input type="datetime-local" name="available_until">
+            </div>
+
+            <div class="form-group">
+                <label>Assign Questions</label>
+
                 <div class="checkbox-list">
                     <?php foreach ($questions as $question): ?>
                         <label class="checkbox-item">

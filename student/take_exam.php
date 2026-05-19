@@ -29,7 +29,7 @@ if ($attempt['end_time'] !== null) {
 }
 
 $questionsStmt = $pdo->prepare("
-    SELECT q.id AS question_id, q.question_text, q.image_path
+    SELECT q.id AS question_id, q.question_text, q.image_path, q.answer_type
     FROM attempt_questions aq
     INNER JOIN questions q ON aq.question_id = q.id
     WHERE aq.attempt_id = :attempt_id
@@ -49,6 +49,7 @@ $startTimestamp = strtotime($attempt['start_time']);
 $durationSeconds = ((int)$attempt['duration_minutes']) * 60;
 $endTimestamp = $startTimestamp + $durationSeconds;
 $remainingSeconds = max(0, $endTimestamp - time());
+
 if ($remainingSeconds <= 0) {
     ?>
     <form id="autoExpiredForm" method="POST" action="submit_exam.php">
@@ -76,12 +77,19 @@ if ($remainingSeconds <= 0) {
 
     <form method="POST" action="submit_exam.php" id="examForm">
         <input type="hidden" name="attempt_id" value="<?= $attemptId ?>">
+        <input type="hidden" name="auto_submitted" id="auto_submitted" value="0">
 
         <?php foreach ($questions as $index => $question): ?>
             <div class="card question-card">
                 <h3>Question <?= $index + 1 ?></h3>
+
+                <?php if (($question['answer_type'] ?? 'single') === 'multiple'): ?>
+                    <p><strong>Multiple answers:</strong> select all correct options.</p>
+                <?php else: ?>
+                    <p><strong>Single answer:</strong> select one option.</p>
+                <?php endif; ?>
+
                 <p><?= htmlspecialchars($question['question_text']) ?></p>
-                <input type="hidden" name="auto_submitted" id="auto_submitted" value="0">
 
                 <?php if (!empty($question['image_path'])): ?>
                     <img src="/music-exam-system-main/<?= htmlspecialchars($question['image_path']) ?>" class="question-image" alt="Question image">
@@ -95,7 +103,20 @@ if ($remainingSeconds <= 0) {
                 <div class="options-group">
                     <?php foreach ($options as $option): ?>
                         <label class="option-item">
-                            <input type="radio" name="answers[<?= $question['question_id'] ?>]" value="<?= $option['id'] ?>">
+                            <?php if (($question['answer_type'] ?? 'single') === 'multiple'): ?>
+                                <input
+                                    type="checkbox"
+                                    name="answers[<?= $question['question_id'] ?>][]"
+                                    value="<?= $option['id'] ?>"
+                                >
+                            <?php else: ?>
+                                <input
+                                    type="radio"
+                                    name="answers[<?= $question['question_id'] ?>][]"
+                                    value="<?= $option['id'] ?>"
+                                >
+                            <?php endif; ?>
+
                             <?= htmlspecialchars($option['option_text']) ?>
                         </label>
                     <?php endforeach; ?>
@@ -113,4 +134,5 @@ function confirmSubmit() {
     return confirm("Are you sure you want to submit the exam? You cannot change your answers after this.");
 }
 </script>
+
 <?php include __DIR__ . '/../includes/footer.php'; ?>
